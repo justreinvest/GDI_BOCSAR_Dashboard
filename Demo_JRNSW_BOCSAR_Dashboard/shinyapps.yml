@@ -1,0 +1,7 @@
+name: Demo_BOCSAR_LGA_Shiny
+account: ofor22
+server: shinyapps.io
+runtime: shiny
+app_title: "Demo BOCSAR LGA Shiny App"
+app_source: .
+memory: 1024M

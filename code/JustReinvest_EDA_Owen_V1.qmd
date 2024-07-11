@@ -1,0 +1,232 @@
+---
+title: "JustReinvest_EDA_Owen_V1"
+format: html
+editor: source
+---
+
+# Libraries
+
+```{r}
+library(tidyverse)
+library(data.table)
+
+library(ggplot2)
+```
+
+
+
+# Read in datasets
+```{r}
+
+rogs_6_police_df_raw <- fread("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/data/drive-download-20240612T081926Z-001/rogs-2024-partc-section6-police-services-dataset.csv")
+
+rogs_7_courts_df_raw <- fread("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/data/drive-download-20240612T081926Z-001/rogs-2024-partc-section7-courts-dataset.csv")
+
+rogs_8_corrective_df_raw <- fread("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/data/drive-download-20240612T081926Z-001/rogs-2024-partc-section8-corrective-services-dataset.csv")
+
+rogs_17_youth_df_raw <- fread("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/data/drive-download-20240612T081926Z-001/rogs-2024-partf-section17-youth-justice-dataset_annotated.csv")
+
+rogs_CA_overview_df_raw <- fread("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/data/drive-download-20240612T081926Z-001/rogs-2024-partc-sector-overview-dataset.csv")
+
+
+```
+
+
+
+# EXPLORATORY ANALYSES / PLOTS
+
+How much money is being spent on/in the criminal justice system, especially in disaggregated terms:
+
+·  	By sector/service - police, courts, youth justice, incarceration, etc: CA.2; 7A.11 - total expenditure; 7A.31 - expenditure per finalisation
+
+·   	On a per capita basis, by Aboriginality and age (e.g., per person per day, for youth and for adults)[of1] Possible derive variables from 8A.5 &  8A.7 - ATSI prisoner and community corrections population·      
+ 
+How do ATSI spending and outcomes compare to the non-Indigenous population?
+
+·   	Expenditures — possibly based on derived variables using 7A.11 and 8A.5/8A.7
+
+·  	Incarceration rates -  possibly by 8A.5/8A.7 --> more info for Youth Justice 17A.18, 17A.28
+ 
+ 
+ 
+ #-------
+ 
+ 
+# Expenditure per finalisation
+ 
+
+```{r}
+
+# Filter for Table 7A.11 and exclude payroll tax
+rogs_7_11 <- rogs_7_courts_df_raw %>% 
+  filter(Table_Number == "7A.11") %>%
+  filter(Description2 == "Excluding payroll tax") %>% 
+  select(-c("Aust", "Aust cts"))
+
+# Convert relevant columns to numeric
+rogs_7_11 <- rogs_7_11 %>% 
+  mutate(across(NSW:NT, ~ as.numeric(gsub(",", "", .))))
+
+# Summarize the total expenditure by court type and year
+total_expenditure_by_sector <- rogs_7_11 %>%
+  group_by(Court_Type, Year) %>%
+  summarise(across(NSW:NT, sum, na.rm = TRUE))
+
+# Reshape the data for plotting
+expenditure_long <- total_expenditure_by_sector %>%
+  pivot_longer(cols = NSW:NT, names_to = "State", values_to = "Expenditure")
+
+
+options(scipen = 9999)
+# Plot the data
+ggplot(expenditure_long, aes(x = Year, y = Expenditure, color = Court_Type, group = Court_Type)) +
+  geom_line() +
+  facet_wrap(~ State, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Expenditure Over Time by Court Type and State/Territory",
+       x = "Year",
+       y = "Expenditure",
+       color = "State/Territory") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+options(scipen = 0)
+
+```
+
+
+
+
+#--------------------
+
+
+# Comparing Incarceration Rates
+
+# Youth Justice
+
+```{r}
+
+
+# Filter for Table 7A.11 and exclude payroll tax
+rogs_17A5 <- rogs_17_youth_df_raw %>% 
+  filter(Table_Number == "17A.5",
+         Service_Type == "Detention-based supervision",
+         Age == "10-17 years old")
+
+
+# Convert relevant columns to numeric
+rogs_17A5 <- rogs_17A5 %>%
+  mutate(across(NSW:Aust, ~ as.numeric(gsub(",", "", .))))
+
+rogs_17A5_plotting_counts <- rogs_17A5 %>% filter(
+  Description6!= "All people",
+  Unit == "no."
+) %>% 
+  pivot_longer(cols = NSW:Aust, names_to = "State", values_to = "Number_Detention")
+
+rogs_17A5_plotting_rates <- rogs_17A5 %>% filter(
+  Description6!= "All people",
+  Unit == "rate"
+) %>% 
+  pivot_longer(cols = NSW:Aust, names_to = "State", values_to = "Rate_Detention_per10000")
+
+
+# Plot number of Indigenous youth in detention
+ggplot(rogs_17A5_plotting_counts, aes(x = Year, y = Number_Detention, color = Description6, group = Description6)) +
+  geom_line() +
+  facet_wrap(~ State, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Number of Youth in Detention Over Time",
+       x = "Year",
+       y = "Number of Youth",
+       color = "State/Territory") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+
+# Plot Rates of Indigenous youth in detention
+ggplot(rogs_17A5_plotting_rates, aes(x = Year, y = Rate_Detention_per10000, color = Description6, group = Description6)) +
+  geom_line() +
+  facet_wrap(~ State, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Rates (per 10,000) of Youth in Detention Over Time",
+       x = "Year",
+       y = "Rates per 10,000",
+       color = "State/Territory") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +ylim(0,65)
+
+
+```
+
+
+
+# Prison - adults
+
+```{r}
+
+
+
+# Filter for Table 8A.5
+rogs_8A5 <- rogs_8_corrective_df_raw %>% 
+  filter(Table_Number == "8A.5")
+
+
+# Convert relevant columns to numeric
+rogs_8A5 <- rogs_8A5 %>%
+  mutate(across(NSW:Aust, ~ as.numeric(gsub(",", "", .))))
+
+rogs_8A5_plotting_counts <- rogs_8A5 %>% filter(
+  Indigenous_Status!= "All people",
+  Unit == "no."
+) %>% 
+  pivot_longer(cols = NSW:Aust, names_to = "State", values_to = "Number_Prison")
+
+rogs_8A5_plotting_rates <- rogs_8A5 %>% filter(
+  Indigenous_Status!= "All people",
+  Unit == "rate"
+) %>% 
+  pivot_longer(cols = NSW:Aust, names_to = "State", values_to = "Rate_Prison_per100000")
+
+
+# Plot number of Indigenous people in detention
+ggplot(rogs_8A5_plotting_counts, aes(x = Year, y = Number_Prison, color = Indigenous_Status, group = Indigenous_Status)) +
+  geom_line() +
+  facet_wrap(~ State, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Number of People in Prison Over Time",
+       x = "Year",
+       y = "Number of People",
+       color = "State/Territory") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+
+# Plot rates of Indigenous people in detention
+ggplot(rogs_8A5_plotting_rates, aes(x = Year, y = Rate_Prison_per100000, color = Indigenous_Status, group = Indigenous_Status)) +
+  geom_line() +
+  facet_wrap(~ State, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Rates (per 100,000) of People in Prison Over Time (Crude)",
+       x = "Year",
+       y = "Crude Rate per 100,000",
+       color = "State/Territory") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +ylim(0,4200)
+
+
+
+# Plot number of Indigenous youth in detention
+ggplot(rogs_8A5_plotting_rates, aes(x = Year, y = Rate_Prison_per100000/10, color = Indigenous_Status, group = Indigenous_Status)) +
+  geom_line() +
+  facet_wrap(~ State, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Rates (per 10,000) of People in Prison Over Time (Crude)",
+       x = "Year",
+       y = "Crude Rate per 10,000",
+       color = "State/Territory") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +ylim(0,420)
+
+
+```
+
