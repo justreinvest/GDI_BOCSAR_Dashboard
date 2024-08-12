@@ -12,11 +12,10 @@ packages:
   - tidyverse
   - readxl
 ---
+
 <!-- rsconnect::deployApp("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/code/Demo_BOCSAR_LGA_Shiny", account = "ofor22", server = "shinyapps.io") -->
 
 rsconnect::deployApp("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/code/Demo_BOCSAR_LGA_Shiny")
-
-
 
 ```{r}
 # Load required libraries
@@ -35,7 +34,6 @@ library(readxl)
 library(dplyr)
 ```
 
-
 ```{r}
 LGA_custody_raw <- read_excel("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/data/BOCSAR/Aboriginal contacts with the Criminal Justice System by Local Government Area 2022-2023.xlsx",sheet = 8, range = "A6:G138")
 
@@ -48,8 +46,8 @@ LGA_shapes <- st_read("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/d
 
 ```
 
-
 # Fix LGA names
+
 ```{r}
 # Create a mapping of LGA names
 lga_name_mapping <- c(
@@ -117,7 +115,6 @@ save(LGA_shapes_simplified, file = "LGA_shapes_simplified")
 
 ```
 
-
 ```{r}
 
 # Load required libraries
@@ -167,14 +164,11 @@ save(NSW_LGAs_precomputed, file = "NSW_LGAs_precomputed")
 
 ```
 
+-   get LGA shapefile
 
+-   create basic Shiny app
 
-- get LGA shapefile
-
-- create basic Shiny app
-
-- When LGA selected, plots / EDA on side + hypothetical cost reduction tool...
-
+-   When LGA selected, plots / EDA on side + hypothetical cost reduction tool...
 
 ```{r}
 # 
@@ -273,7 +267,7 @@ server <- function(input, output, session) {
   output$cost_savings_detail <- renderText({
     selected_lga <- NSW_LGAs_precomputed[NSW_LGAs_precomputed$LGA_NAME23_standardized == input$lga_select, ]
     prisoners_2023 <- selected_lga$PrisonerCount_2023
-    daily_cost <- 298  # Cost per prisoner per day
+    daily_cost <- 298  # Cost per prisoner per day - this could reference a specific table from ROGS
     annual_cost <- prisoners_2023 * daily_cost * 365
     reduction <- prisoners_2023 * (input$reduction_percent / 100)
     prisoners_after_reduction <- round(prisoners_2023 - reduction)
@@ -306,4 +300,3 @@ server <- function(input, output, session) {
 # Run the app
 shinyApp(ui = ui, server = server)
 ```
-
