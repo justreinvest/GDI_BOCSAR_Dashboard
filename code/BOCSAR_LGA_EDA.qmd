@@ -13,7 +13,7 @@ packages:
   - readxl
 ---
 
-<!-- rsconnect::deployApp("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/code/Demo_BOCSAR_LGA_Shiny", account = "ofor22", server = "shinyapps.io") -->
+rsconnect::deployApp("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/code/Demo_BOCSAR_LGA_Shiny", account = "ofor22", server = "shinyapps.io")
 
 rsconnect::deployApp("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/code/Demo_BOCSAR_LGA_Shiny")
 
