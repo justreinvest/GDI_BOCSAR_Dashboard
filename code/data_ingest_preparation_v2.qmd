@@ -8,6 +8,9 @@ editor: source
 
 ## Final step before joining with spatial LGA shapefile = CENSOR cell counts <5 with value 'x' - keep in mind for processing/vis that x's are present for censored cells
 
+## To deploy shiny app:
+rsconnect::deployApp("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/code/GDI_BOCSAR_Dashboard/code/dashboard_shiny_v3", account = "ofor22", server = "shinyapps.io")
+
 # Load required libraries
 ```{r}
 library(tidyverse)
@@ -107,9 +110,12 @@ process_bocsar_sheet <- function(df, sheet_name) {
   df %>%
     pivot_wider(names_from = Aboriginality, values_from = Count) %>%
     mutate(across(c(Aboriginal, `Non-Aboriginal`, Total), as.numeric)) %>%
-    mutate(Year = as.numeric(as.character(Year)),
-           LGA = sapply(LGA, standardize_lga_name),
-           BOCSAR_variable = if(sheet_name == "Table 1") Policing.Activity else bocsar_variables[sheet_name]) %>%
+    mutate(Year = case_when(
+      sheet_name %in% c("Table 5", "Table 7") ~ as.numeric(sub("/.*", "", Year)),
+      TRUE ~ as.numeric(as.character(Year))
+    ),
+    LGA = sapply(LGA, standardize_lga_name),
+    BOCSAR_variable = if(sheet_name == "Table 1") Policing.Activity else bocsar_variables[sheet_name]) %>%
     dplyr::select(LGA, Year, Aboriginal, `Non-Aboriginal`, Total, BOCSAR_variable) %>%
     arrange(LGA, Year)
 }
@@ -125,11 +131,15 @@ poi_processed <- poi_data %>%
          Year = as.numeric(as.character(Year)),
          BOCSAR_variable = paste0("POI_", Offence)) %>%
   dplyr::select(LGA, Year, Aboriginal, `Non-Aboriginal`, Total, BOCSAR_variable) %>%
+  filter(Year %in% c(2022, 2023)) %>%  # Filter POI data for 2022-2023
   arrange(LGA, Year)
 
-# Combine all data into one dataset
-all_data <- bind_rows(bocsar_processed)
-all_data <- bind_rows(all_data, list(poi_processed))
+bocsar_combined <- bind_rows(bocsar_processed)
+
+# Combine all data, with POI data at the end
+all_data <- bind_rows(bocsar_combined, poi_processed)
+
+
 
 
 # Function to censor values
@@ -155,11 +165,13 @@ censor_values <- function(row) {
   return(as.data.frame(censored))
 }
 
+
 # Apply censoring to the combined dataset
 all_data_censored <- all_data %>%
   group_by(LGA, Year, BOCSAR_variable) %>%
   do(censor_values(.)) %>%
   ungroup()
+
 
 # Load LGA shapes and join with censored data
 LGA_shapes <- st_read("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/data/LGA_2023_AUST_GDA2020")

@@ -1,0 +1,34 @@
+---
+title: "deploy_shinylive_v2"
+format: html
+editor: source
+---
+
+## Deploying Shinylive (serverless) shiny app
+Helper script
+```{r}
+#install.packages('shinylive')
+#install.packages('httpuv')
+#install.packages('shiny')
+```
+
+
+```{r}
+setwd("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/code/GDI_BOCSAR_Dashboard/code/dashboard_shinylive")
+
+library(shiny)
+library(shinylive)
+
+# Build the app
+#shinylive::export(".", "deployment")
+
+# Serve the app locally (optional, for testing)
+httpuv::runStaticServer("deployment")
+
+
+
+# Deploy to GitHub Pages (if you have a GitHub repository set up)
+# Note: You need to have Git installed and configured
+#shinylive::deploy("deployment", "https://github.com/yourusername/your-repo-name")
+```
+
