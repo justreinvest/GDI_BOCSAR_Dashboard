@@ -1,0 +1,183 @@
+---
+title: "Data Preparation for JustReinvest BOCSAR Dashboard - with censoring"
+author: "Owen Forbes"
+format: html
+editor: source
+---
+
+
+## Final step before joining with spatial LGA shapefile = CENSOR cell counts <5 with value 'x' - keep in mind for processing/vis that x's are present for censored cells
+
+# Load required libraries
+```{r}
+library(tidyverse)
+library(readxl)
+library(sf)
+library(rmapshaper)
+
+setwd("~/Desktop/Good_Data_Institute/JustReinvest/code/GDI_BOCSAR_Dashboard/code")
+```
+
+
+# Load required libraries
+```{r}
+library(tidyverse)
+library(readxl)
+library(sf)
+library(rmapshaper)
+```
+
+# Define LGA name mapping and standardization function
+```{r}
+lga_name_mapping <- c(
+  "Bathurst Regional" = "Bathurst",
+  "Central Coast" = "Central Coast (NSW)",
+  "Coffs Harbour" = "Coffs Harbour",
+  "Dubbo Regional" = "Dubbo",
+  "Mid-Western Regional" = "Mid-Western",
+  "Queanbeyan-Palerang Regional" = "Queanbeyan-Palerang",
+  "Snowy Monaro Regional" = "Snowy Monaro",
+  "Upper Hunter Shire" = "Upper Hunter",
+  "Port Macquarie-Hastings" = "Port Macquarie-Hastings",
+  "Glen Innes Severn" = "Glen Innes Severn",
+  "Liverpool Plains" = "Liverpool Plains",
+  "Tamworth Regional" = "Tamworth",
+  "Byron" = "Byron",
+  "Richmond Valley" = "Richmond Valley",
+  "Cootamundra-Gundagai" = "Cootamundra-Gundagai",
+  "Snowy Valleys" = "Snowy Valleys",
+  "The Hills Shire" = "The Hills",
+  "Bayside" = "Bayside (NSW)",
+  "Inner West" = "Inner West",
+  "Northern Beaches" = "Northern Beaches",
+  "Campbelltown" = "Campbelltown (NSW)",
+  "Sutherland Shire" = "Sutherland",
+  "Upper Lachlan Shire" = "Upper Lachlan",
+  "Greater Hume Shire" = "Greater Hume",
+  "Warrumbungle Shire" = "Warrumbungle",
+  "Armidale Regional" = "Armidale",
+  "Ku-Ring-Gai" = "Ku-ring-gai"
+)
+
+standardize_lga_name <- function(name) {
+  name <- sub(" \\(NSW\\)$", "", name)
+  if (name %in% names(lga_name_mapping)) {
+    return(lga_name_mapping[name])
+  }
+  return(name)
+}
+```
+
+# Read and process BOCSAR data including POI
+```{r}
+bocsar_path <- "/Users/Current/Desktop/Good_Data_Institute/JustReinvest/code/GDI_BOCSAR_Dashboard/data/BOCSAR/BOCSAR_New/sw24-23906 Contacts with the CJS by Aboriginality and LGA_V1.xlsx"
+poi_path <- "/Users/Current/Desktop/Good_Data_Institute/JustReinvest/code/GDI_BOCSAR_Dashboard/data/BOCSAR/BOCSAR_New/sr24-23842_BOCSAR_PersonsOfInterest.xlsx"
+
+clean_dataframe <- function(df) {
+  df <- df[rowSums(is.na(df)) != ncol(df), ]
+  df <- df[!is.na(df[[1]]), ]
+  names(df) <- make.names(names(df), unique = TRUE)
+  return(df)
+}
+
+bocsar_sheets <- excel_sheets(bocsar_path)[1:8]
+bocsar_data <- list()
+
+for (sheet in bocsar_sheets) {
+  sheet_data <- read_excel(bocsar_path, sheet = sheet, skip = 5, col_names = TRUE)
+  sheet_data <- clean_dataframe(sheet_data)
+  bocsar_data[[sheet]] <- sheet_data
+}
+
+poi_data <- read_excel(poi_path, skip = 4, col_names = TRUE)
+poi_data <- clean_dataframe(poi_data)
+poi_data <- poi_data[!grepl("^Note|^Source|^Reference|^Please", poi_data$Residential.LGA.of.the.POI), ]
+
+bocsar_variables <- c(
+  "Table 2" = "Infringement notices",
+  "Table 3" = "Young people proceeded against",
+  "Table 4" = "Young people appearing in court",
+  "Table 5" = "Young people in detention",
+  "Table 6" = "Adults appearing in court",
+  "Table 7" = "Adults in custody",
+  "Table 8" = "Victims of violent crime"
+)
+
+process_bocsar_sheet <- function(df, sheet_name) {
+  df %>%
+    pivot_wider(names_from = Aboriginality, values_from = Count) %>%
+    mutate(across(c(Aboriginal, `Non-Aboriginal`, Total), as.numeric)) %>%
+    mutate(Year = as.numeric(as.character(Year)),
+           LGA = sapply(LGA, standardize_lga_name),
+           BOCSAR_variable = if(sheet_name == "Table 1") Policing.Activity else bocsar_variables[sheet_name]) %>%
+    dplyr::select(LGA, Year, Aboriginal, `Non-Aboriginal`, Total, BOCSAR_variable) %>%
+    arrange(LGA, Year)
+}
+
+bocsar_processed <- map2(bocsar_data, names(bocsar_data), process_bocsar_sheet)
+
+poi_processed <- poi_data %>%
+  pivot_wider(names_from = Aboriginality, values_from = Value) %>%
+  dplyr::select(-`NA`, -Unknown) %>%
+  mutate(across(c(Aboriginal, `Non-Aboriginal`), as.numeric)) %>%
+  mutate(Total = Aboriginal + `Non-Aboriginal`,
+         LGA = sapply(Residential.LGA.of.the.POI, standardize_lga_name),
+         Year = as.numeric(as.character(Year)),
+         BOCSAR_variable = paste0("POI_", Offence)) %>%
+  dplyr::select(LGA, Year, Aboriginal, `Non-Aboriginal`, Total, BOCSAR_variable) %>%
+  arrange(LGA, Year)
+
+# Combine all data into one dataset
+all_data <- bind_rows(bocsar_processed)
+all_data <- bind_rows(all_data, list(poi_processed))
+
+
+# Function to censor values
+censor_values <- function(row) {
+  censor_single <- function(x) {
+    if (is.na(x) || x == "x") return("x")
+    num_x <- suppressWarnings(as.numeric(x))
+    if (is.na(num_x)) return(x)  # Keep non-numeric values as is
+    ifelse(num_x < 5, "x", as.character(x))
+  }
+  
+  censored <- lapply(row, censor_single)
+  
+  # Check if Aboriginal or Non-Aboriginal is "x" or if Total is less than 5
+  aboriginal_censored <- censored$Aboriginal == "x"
+  non_aboriginal_censored <- censored$`Non-Aboriginal` == "x"
+  total_censored <- suppressWarnings(as.numeric(censored$Total)) < 5
+  
+  if (isTRUE(aboriginal_censored) || isTRUE(non_aboriginal_censored) || isTRUE(total_censored)) {
+    censored$Total <- "x"
+  }
+  
+  return(as.data.frame(censored))
+}
+
+# Apply censoring to the combined dataset
+all_data_censored <- all_data %>%
+  group_by(LGA, Year, BOCSAR_variable) %>%
+  do(censor_values(.)) %>%
+  ungroup()
+
+# Load LGA shapes and join with censored data
+LGA_shapes <- st_read("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/data/LGA_2023_AUST_GDA2020")
+LGA_shapes$LGA_NAME23_standardized <- sapply(LGA_shapes$LGA_NAME23, standardize_lga_name)
+NSW_LGAs <- LGA_shapes %>% filter(STE_NAME21 == "New South Wales")
+NSW_LGAs_simplified <- ms_simplify(NSW_LGAs, keep = 0.05, keep_shapes = TRUE)
+
+bocsar_poi_spatial <- NSW_LGAs_simplified %>%
+  left_join(all_data_censored, by = c("LGA_NAME23_standardized" = "LGA"))
+
+bocsar_poi_spatial <- st_transform(bocsar_poi_spatial, 4326)
+
+# Check for any remaining mismatches
+data_mismatches <- setdiff(all_data_censored$LGA, NSW_LGAs$LGA_NAME23_standardized)
+print("Remaining mismatches in combined data:")
+print(data_mismatches)
+
+save(bocsar_poi_spatial, file = "bocsar_poi_spatial.RData")
+print(object.size(bocsar_poi_spatial), units = "Mb")
+str(bocsar_poi_spatial)
+```
