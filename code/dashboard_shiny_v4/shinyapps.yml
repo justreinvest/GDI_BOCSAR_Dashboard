@@ -1,0 +1,7 @@
+name: JRNSW_BOCSAR_Dashboard
+account: ofor22
+server: shinyapps.io
+runtime: shiny
+app_title: "Just Reinvest NSW - BOCSAR Dashboard (Demo v3)"
+app_source: .
+memory: 1024M

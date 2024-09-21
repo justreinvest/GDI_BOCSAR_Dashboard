@@ -1,0 +1,9 @@
+name: demo_bocsar_lga_shiny
+title: Demo_BOCSAR_LGA_Shiny
+username:
+account: ofor22
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 12236631
+bundleId: 9128402
+url: https://ofor22.shinyapps.io/demo_bocsar_lga_shiny/
