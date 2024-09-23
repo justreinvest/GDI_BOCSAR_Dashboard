@@ -13,7 +13,7 @@ library(rmarkdown)
 source("generate_report.R")
 
 # Load the data
-load("bocsar_poi_spatial_with_ratios.RData")
+load("bocsar_poi_spatial_with_pop_and_costs.RData")
 print("Initial data load:")
 print(head(bocsar_poi_spatial))
 print(names(bocsar_poi_spatial))

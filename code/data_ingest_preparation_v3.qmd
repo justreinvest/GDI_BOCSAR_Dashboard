@@ -194,49 +194,173 @@ print(object.size(bocsar_poi_spatial), units = "Mb")
 str(bocsar_poi_spatial)
 ```
 
+
 ```{r}
+# Load required libraries
+library(tidyverse)
+library(readxl)
+library(sf)
+library(rmapshaper)
 
-# Add ratio calculations
+# ... (keep your existing code for loading BOCSAR data and processing it)
+
+# Load population data
+population_data <- read_excel("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/code/GDI_BOCSAR_Dashboard/data/BOCSAR/BOCSAR_old/Aboriginal contacts with the Criminal Justice System by Local Government Area 2022-2023.xlsx", 
+                              sheet = "Table 2", skip = 5)
+
+# Clean and process population data
+population_data <- population_data %>%
+  select(LGA = LGA, 
+         Aboriginal_Population = `Aboriginal census population`) %>%
+  mutate(LGA = standardize_lga_name(LGA),
+         Aboriginal_Population = as.numeric(Aboriginal_Population))
+
+# Since the adult population is in Table 6, we need to load it separately
+population_data_adult <- read_excel("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/code/GDI_BOCSAR_Dashboard/data/BOCSAR/BOCSAR_old/Aboriginal contacts with the Criminal Justice System by Local Government Area 2022-2023.xlsx", 
+                                    sheet = "Table 6", skip = 5)
+
+# Clean and process adult population data
+population_data_adult <- population_data_adult %>%
+  select(LGA = LGA, 
+         Aboriginal_Adult_Population = `Aboriginal census population aged 18+`) %>%
+  mutate(LGA = standardize_lga_name(LGA),
+         Aboriginal_Adult_Population = as.numeric(Aboriginal_Adult_Population))
+
+# Merge population data
+population_data <- population_data %>%
+  left_join(population_data_adult, by = "LGA")
+
+# Merge population data with bocsar_poi_spatial
 bocsar_poi_spatial <- bocsar_poi_spatial %>%
-  group_by(LGA_NAME23_standardized, Year, BOCSAR_variable) %>%
-  mutate(
-    ratio = case_when(
-      BOCSAR_variable %in% c("Adults appearing in court", "Adults in custody", "Young people proceeded against") ~ 
-        as.numeric(Aboriginal) / as.numeric(Non.Aboriginal),
-      TRUE ~ NA_real_
-    )
-  ) %>%
-  ungroup()
+  left_join(population_data, by = c("LGA_NAME23_standardized" = "LGA"))
 
-# Handle infinite and NaN values
-bocsar_poi_spatial$ratio[is.infinite(bocsar_poi_spatial$ratio) | is.nan(bocsar_poi_spatial$ratio)] <- NA
 
-# Handle NA/numeric types
+# Read in  ROGS data for costs...
 
-# Create numeric versions of columns
+# Load required libraries
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(stringr)
+
+# Load data
+rogs_filepath <- "/Users/Current/Desktop/Good_Data_Institute/JustReinvest/code/GDI_BOCSAR_Dashboard/data/ROGS_combined/ROGS.xlsx"
+Data8A <- read_excel(rogs_filepath, sheet = "8A")
+Data17A <- read_excel(rogs_filepath, sheet = "17A")
+Data6A <- read_excel(rogs_filepath, sheet = "6A")
+Data7A <- read_excel(rogs_filepath, sheet = "7A")
+DataCA <- read_excel(rogs_filepath, sheet = "CA")
+
+# Extract data for Q1a1 (Police)
+rogsq1a1 <- Data6A %>% 
+  filter(Table_Number=="6A.1") %>% 
+  filter(Description3=="Total recurrent expenditure") %>%
+  mutate(across(NSW:NT, ~ as.numeric(gsub(",", "", .)))) %>%
+  pivot_longer(cols = NSW:NT, names_to = "State", values_to = "Police") %>%
+  select(Year, State, Police)
+rogsq1a1$Police <- rogsq1a1$Police*1000
+
+# Extract data for Q1a2 (Criminal Courts)
+rogsq1a2 <- Data7A %>% 
+  filter(Table_Number=="7A.11") %>% 
+  filter(Description3=="All criminal courts") %>%
+  mutate(across(NSW:NT, ~ as.numeric(gsub(",", "", .)))) %>%
+  pivot_longer(cols = NSW:NT, names_to = "State", values_to = "Criminal") %>%
+  select(Year, State, Criminal)
+
+# Extract data for Q1a3 (Civil Courts)
+rogsq1a3 <- Data7A %>% 
+  filter(Table_Number=="7A.12") %>% 
+  filter(str_detect(Court_Type,"All civil courts")) %>%
+  mutate(across(NSW:NT, ~ as.numeric(gsub(",", "", .)))) %>%
+  pivot_longer(cols = NSW:NT, names_to = "State", values_to = "Civil") %>%
+  select(Year, State, Civil)
+
+# Extract data for Q1a4 (Youth Justice)
+rogsq1a4 <- Data17A %>% 
+  filter(Table_Number=="17A.10") %>% 
+  filter(Description3=="Detention-based services") %>%
+  filter(Unit=="$'000") %>%
+  mutate(across(NSW:NT, ~ as.numeric(gsub(",", "", .)))) %>%
+  pivot_longer(cols = NSW:NT, names_to = "State", values_to = "Youth") %>%
+  select(Year, State, Youth)
+
+# Extract data for Q1a5 (Incarceration)
+rogsq1a5 <- Data8A %>% 
+  filter(Table_Number=="8A.1") %>% 
+  filter(Description3=="Net operating expenditure") %>% 
+  filter(Description4=="Total") %>%
+  mutate(across(NSW:NT, ~ as.numeric(gsub(",", "", .)))) %>%
+  pivot_longer(cols = NSW:NT, names_to = "State", values_to = "Incarceration") %>%
+  select(Year, State, Incarceration)
+
+# Merge data for Q1a
+q1alist <- list(rogsq1a1, rogsq1a2, rogsq1a3, rogsq1a4, rogsq1a5) 
+q1a <- Reduce(function(x,y) merge(x,y,all=TRUE), q1alist)
+q1a$Year <- substr(q1a$Year, start=1, stop=4)
+q1a <- pivot_longer(data=q1a, cols=Police:Incarceration, names_to="Sector", values_to="Expenditure")
+
+# Extract data for Q1c2 (Criminal Courts cost per finalization)
+rogsq1c2 <- Data7A %>% 
+  filter(Table_Number=="7A.31") %>% 
+  filter(Description3=="All criminal courts") %>%
+  mutate(across(NSW:NT, ~ as.numeric(gsub(",", "", .)))) %>%
+  pivot_longer(cols = NSW:NT, names_to = "State", values_to = "Criminal_Cost_Per_Finalization") %>%
+  select(Year, State, Criminal_Cost_Per_Finalization)
+
+# Extract data for Q1c5 (Youth Justice cost per day)
+rogsq1c5 <- Data17A %>% 
+  filter(Table_Number=="17A.21") %>% 
+  filter(Description3=="Detention-based services") %>%
+  filter(Description1=="Cost per average day per young person") %>%
+  mutate(across(NSW:NT, ~ as.numeric(gsub(",", "", .)))) %>%
+  pivot_longer(cols = NSW:NT, names_to = "State", values_to = "Youth_Cost_Per_Day") %>%
+  select(Year, State, Youth_Cost_Per_Day)
+
+# Extract data for Q1c7 (Incarceration cost per day)
+rogsq1c7 <- Data8A %>% 
+  filter(Table_Number=="8A.20") %>% 
+  filter(Description2=="Per prisoner") %>% 
+  filter(CS_Type=="Prison") %>%
+  mutate(across(NSW:NT, ~ as.numeric(gsub(",", "", .)))) %>%
+  pivot_longer(cols = NSW:NT, names_to = "State", values_to = "Incarceration_Cost_Per_Day") %>%
+  select(Year, State, Incarceration_Cost_Per_Day)
+
+# Merge data for Q1c
+q1clist <- list(rogsq1c2, rogsq1c5, rogsq1c7) 
+q1c <- Reduce(function(x,y) merge(x,y,all=TRUE), q1clist)
+q1c$Year <- substr(q1c$Year, start=1, stop=4)
+
+# Process ROGS data for NSW
+rogs_processed <- q1a %>%
+  filter(State == "NSW", Year == max(Year)) %>%
+  select(Sector, Expenditure) %>%
+  pivot_wider(names_from = Sector, values_from = Expenditure)
+
+rogs_processed_per_person <- q1c %>%
+  filter(State == "NSW", Year == max(Year)) %>%
+  select(-State, -Year)
+
+rogs_processed <- bind_cols(rogs_processed, rogs_processed_per_person)
+
+# Print the processed ROGS data
+print(rogs_processed)
+
+# Add ROGS data to bocsar_poi_spatial (as state-wide constants)
 bocsar_poi_spatial <- bocsar_poi_spatial %>%
   mutate(
-    Aboriginal_num = as.numeric(ifelse(Aboriginal == "x", NA, Aboriginal)),
-    Non.Aboriginal_num = as.numeric(ifelse(Non.Aboriginal == "x", NA, Non.Aboriginal)),
-    Total_num = as.numeric(ifelse(Total == "x", NA, Total))
+    Police_Expenditure = rogs_processed$Police,
+    Criminal_Courts_Expenditure = rogs_processed$Criminal,
+    Civil_Courts_Expenditure = rogs_processed$Civil,
+    Youth_Justice_Expenditure = rogs_processed$Youth,
+    Incarceration_Expenditure = rogs_processed$Incarceration,
+    Criminal_Courts_Cost_Per_Finalization = rogs_processed$Criminal_Cost_Per_Finalization,
+    Youth_Justice_Cost_Per_Day = rogs_processed$Youth_Cost_Per_Day,
+    Incarceration_Cost_Per_Day = rogs_processed$Incarceration_Cost_Per_Day
   )
 
-# Calculate ratios using numeric versions
-bocsar_poi_spatial <- bocsar_poi_spatial %>%
-  group_by(LGA_NAME23_standardized, Year, BOCSAR_variable) %>%
-  mutate(
-    ratio = case_when(
-      BOCSAR_variable %in% c("Adults appearing in court", "Adults in custody", "Young people proceeded against") ~ 
-        Aboriginal_num / Non.Aboriginal_num,
-      TRUE ~ NA_real_
-    )
-  ) %>%
-  ungroup()
-
-# Save the updated dataset
-save(bocsar_poi_spatial, file = "bocsar_poi_spatial_with_ratios.RData")
-
-# Save the updated dataset
-save(bocsar_poi_spatial, file = "bocsar_poi_spatial_with_ratios.RData")
+# Save the updated data
+save(bocsar_poi_spatial, file = "bocsar_poi_spatial_with_pop_and_costs.RData")
 ```
+
 
