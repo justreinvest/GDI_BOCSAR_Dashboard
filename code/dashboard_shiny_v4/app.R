@@ -13,7 +13,7 @@ library(rmarkdown)
 source("generate_report.R")
 
 # Load the data
-load("bocsar_poi_spatial_with_ratios.RData")
+load("bocsar_poi_spatial_with_pop_and_costs.RData")
 print("Initial data load:")
 print(head(bocsar_poi_spatial))
 print(names(bocsar_poi_spatial))
@@ -51,33 +51,33 @@ ui <- navbarPage(
   tabPanel("Community Profile",
            sidebarLayout(
              sidebarPanel(width = 6,
-               selectInput("lga_select_profile", "Select LGA:", selected = "Moree Plains",
-                           choices = sort(unique(bocsar_poi_spatial$LGA_NAME23_standardized))),
-               sliderInput("reduction_percent", "Incarceration Reduction %:", 
-                           min = 0, max = 100, value = 0, step = 1),
-               tags$div(style = "font-size: 0.9em; word-wrap: break-word;",
-                        verbatimTextOutput("cost_savings")
-               ),
-               actionButton("generate_report", "Generate PDF Report"),
-               textOutput("intro_text")#,
-               #verbatimTextOutput("debug_print")  # Added for debugging
+                          selectInput("lga_select_profile", "Select LGA:", selected = "Moree Plains",
+                                      choices = sort(unique(bocsar_poi_spatial$LGA_NAME23_standardized))),
+                          sliderInput("reduction_percent", "Incarceration Reduction %:", 
+                                      min = 0, max = 100, value = 0, step = 1),
+                          tags$div(style = "font-size: 0.9em; word-wrap: break-word;",
+                                   verbatimTextOutput("cost_savings")
+                          ),
+                          actionButton("generate_report", "Generate PDF Report"),
+                          textOutput("intro_text")#,
+                          #verbatimTextOutput("debug_print")  # Added for debugging
              ),
              mainPanel(width = 6,
-               # tags$div(style = "margin-bottom: 20px;",
-               #          textOutput("intro_text")
-               # ),
-               fluidRow(
-                 column(6, plotlyOutput("time_series_court")),
-                 column(6, plotlyOutput("histogram_court"))
-               ),
-               fluidRow(
-                 column(6, plotlyOutput("time_series_custody")),
-                 column(6, plotlyOutput("histogram_custody"))
-               )#,
-               #fluidRow(
-                 #column(6, plotlyOutput("time_series_youth")),
-                 #column(6, plotlyOutput("histogram_youth"))
-               #)
+                       # tags$div(style = "margin-bottom: 20px;",
+                       #          textOutput("intro_text")
+                       # ),
+                       fluidRow(
+                         column(6, plotlyOutput("time_series_court")),
+                         column(6, plotlyOutput("histogram_court"))
+                       ),
+                       fluidRow(
+                         column(6, plotlyOutput("time_series_custody")),
+                         column(6, plotlyOutput("histogram_custody"))
+                       )#,
+                       #fluidRow(
+                       #column(6, plotlyOutput("time_series_youth")),
+                       #column(6, plotlyOutput("histogram_youth"))
+                       #)
              )
            )
   ),
