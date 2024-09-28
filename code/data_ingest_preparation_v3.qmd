@@ -148,7 +148,7 @@ censor_values <- function(row) {
     if (is.na(x) || x == "x") return("x")
     num_x <- suppressWarnings(as.numeric(x))
     if (is.na(num_x)) return(x)  # Keep non-numeric values as is
-    ifelse(num_x < 5, "x", as.character(x))
+    ifelse(1 <= num_x & num_x <= 4, "x", as.character(x))
   }
   
   censored <- lapply(row, censor_single)
