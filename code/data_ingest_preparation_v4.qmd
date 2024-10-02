@@ -1,37 +1,22 @@
----
-title: "Data Preparation for JustReinvest BOCSAR Dashboard - with censoring"
-author: "Owen Forbes"
-format: html
-editor: source
----
 
+To deploy app to shinyapps.io:
 
-## Final step before joining with spatial LGA shapefile = CENSOR cell counts <5 with value 'x' - keep in mind for processing/vis that x's are present for censored cells
-
-## To deploy shiny app:
 rsconnect::deployApp("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/code/GDI_BOCSAR_Dashboard/code/dashboard_shiny_v4", account = "ofor22", server = "shinyapps.io")
 
-# Load required libraries
+(sub in your own shinyapps credentials / path to local directory with app and files, as needed)
+
 ```{r}
+
+# Load required libraries
 library(tidyverse)
 library(readxl)
 library(sf)
 library(rmapshaper)
+library(jR)
 
 setwd("~/Desktop/Good_Data_Institute/JustReinvest/code/GDI_BOCSAR_Dashboard/code")
-```
-
-
-# Load required libraries
-```{r}
-library(tidyverse)
-library(readxl)
-library(sf)
-library(rmapshaper)
-```
 
 # Define LGA name mapping and standardization function
-```{r}
 lga_name_mapping <- c(
   "Bathurst Regional" = "Bathurst",
   "Central Coast" = "Central Coast (NSW)",
@@ -69,10 +54,8 @@ standardize_lga_name <- function(name) {
   }
   return(name)
 }
-```
 
 # Read and process BOCSAR data including POI
-```{r}
 bocsar_path <- "/Users/Current/Desktop/Good_Data_Institute/JustReinvest/code/GDI_BOCSAR_Dashboard/data/BOCSAR/BOCSAR_New/sw24-23906 Contacts with the CJS by Aboriginality and LGA_V1.xlsx"
 poi_path <- "/Users/Current/Desktop/Good_Data_Institute/JustReinvest/code/GDI_BOCSAR_Dashboard/data/BOCSAR/BOCSAR_New/sr24-23842_BOCSAR_PersonsOfInterest.xlsx"
 
@@ -139,9 +122,6 @@ bocsar_combined <- bind_rows(bocsar_processed)
 # Combine all data, with POI data at the end
 all_data <- bind_rows(bocsar_combined, poi_processed)
 
-
-
-
 # Function to censor values
 censor_values <- function(row) {
   censor_single <- function(x) {
@@ -165,13 +145,11 @@ censor_values <- function(row) {
   return(as.data.frame(censored))
 }
 
-
 # Apply censoring to the combined dataset
 all_data_censored <- all_data %>%
   group_by(LGA, Year, BOCSAR_variable) %>%
   do(censor_values(.)) %>%
   ungroup()
-
 
 # Load LGA shapes and join with censored data
 LGA_shapes <- st_read("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/data/LGA_2023_AUST_GDA2020")
@@ -179,8 +157,59 @@ LGA_shapes$LGA_NAME23_standardized <- sapply(LGA_shapes$LGA_NAME23, standardize_
 NSW_LGAs <- LGA_shapes %>% filter(STE_NAME21 == "New South Wales")
 NSW_LGAs_simplified <- ms_simplify(NSW_LGAs, keep = 0.05, keep_shapes = TRUE)
 
+# Process population data
+pop_lga <- jR::population_lga
+
+# Modify the process_population function to remove the "LGA" prefix
+process_population <- function(data, age_range, indigenous_status) {
+  data %>%
+    filter(grepl(paste0("Age_", age_range), indicator),
+           grepl(indigenous_status, indicator),
+           grepl("_P$", indicator)) %>%
+    mutate(LGA_CODE_2021 = sub("^LGA", "", LGA_CODE_2021)) %>% # Remove "LGA" prefix
+    group_by(LGA_CODE_2021) %>%
+    summarise(population = sum(value))
+}
+
+population_indigenous_over18 <- process_population(pop_lga, "1[8-9]|[2-9][0-9]", "Indig")
+population_indigenous_10_17 <- process_population(pop_lga, "1[0-7]", "Indig")
+population_non_indigenous_over18 <- process_population(pop_lga, "1[8-9]|[2-9][0-9]", "NonInd")
+population_non_indigenous_10_17 <- process_population(pop_lga, "1[0-7]", "NonInd")
+
+population_data <- population_indigenous_over18 %>%
+  rename(Population_Indigenous_over18 = population) %>%
+  left_join(population_indigenous_10_17, by = "LGA_CODE_2021") %>%
+  rename(Population_Indigenous_10_17 = population) %>%
+  left_join(population_non_indigenous_over18, by = "LGA_CODE_2021") %>%
+  rename(Population_Non_Indigenous_over18 = population) %>%
+  left_join(population_non_indigenous_10_17, by = "LGA_CODE_2021") %>%
+  rename(Population_Non_Indigenous_10_17 = population)
+
+# Join population data with spatial data
 bocsar_poi_spatial <- NSW_LGAs_simplified %>%
-  left_join(all_data_censored, by = c("LGA_NAME23_standardized" = "LGA"))
+  left_join(all_data_censored, by = c("LGA_NAME23_standardized" = "LGA")) %>%
+  left_join(population_data, by = c("LGA_CODE23" = "LGA_CODE_2021"))
+
+# Calculate rates
+calculate_rate <- function(count, population) {
+  ifelse(is.na(count) | count == "x" | is.na(population) | population == 0, 
+         NA, 
+         as.numeric(count) / population * 1000)
+}
+
+bocsar_poi_spatial <- bocsar_poi_spatial %>%
+  mutate(
+    Aboriginal_Rate_per_1000 = case_when(
+      BOCSAR_variable %in% c("Young people proceeded against", "Young people appearing in court", "Young people in detention") ~ 
+        calculate_rate(Aboriginal, Population_Indigenous_10_17),
+      TRUE ~ calculate_rate(Aboriginal, Population_Indigenous_over18)
+    ),
+    Non_Aboriginal_Rate_per_1000 = case_when(
+      BOCSAR_variable %in% c("Young people proceeded against", "Young people appearing in court", "Young people in detention") ~ 
+        calculate_rate(Non.Aboriginal, Population_Non_Indigenous_10_17),
+      TRUE ~ calculate_rate(Non.Aboriginal, Population_Non_Indigenous_over18)
+    )
+  )
 
 bocsar_poi_spatial <- st_transform(bocsar_poi_spatial, 4326)
 
@@ -189,61 +218,7 @@ data_mismatches <- setdiff(all_data_censored$LGA, NSW_LGAs$LGA_NAME23_standardiz
 print("Remaining mismatches in combined data:")
 print(data_mismatches)
 
-save(bocsar_poi_spatial, file = "bocsar_poi_spatial.RData")
-print(object.size(bocsar_poi_spatial), units = "Mb")
-str(bocsar_poi_spatial)
-```
-
-
-```{r}
-# Load required libraries
-library(tidyverse)
-library(readxl)
-library(sf)
-library(rmapshaper)
-
-# ... (keep your existing code for loading BOCSAR data and processing it)
-
-# Load population data
-population_data <- read_excel("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/code/GDI_BOCSAR_Dashboard/data/BOCSAR/BOCSAR_old/Aboriginal contacts with the Criminal Justice System by Local Government Area 2022-2023.xlsx", 
-                              sheet = "Table 2", skip = 5)
-
-# Clean and process population data
-population_data <- population_data %>%
-  select(LGA = LGA, 
-         Aboriginal_Population = `Aboriginal census population`) %>%
-  mutate(LGA = standardize_lga_name(LGA),
-         Aboriginal_Population = as.numeric(Aboriginal_Population))
-
-# Since the adult population is in Table 6, we need to load it separately
-population_data_adult <- read_excel("/Users/Current/Desktop/Good_Data_Institute/JustReinvest/code/GDI_BOCSAR_Dashboard/data/BOCSAR/BOCSAR_old/Aboriginal contacts with the Criminal Justice System by Local Government Area 2022-2023.xlsx", 
-                                    sheet = "Table 6", skip = 5)
-
-# Clean and process adult population data
-population_data_adult <- population_data_adult %>%
-  select(LGA = LGA, 
-         Aboriginal_Adult_Population = `Aboriginal census population aged 18+`) %>%
-  mutate(LGA = standardize_lga_name(LGA),
-         Aboriginal_Adult_Population = as.numeric(Aboriginal_Adult_Population))
-
-# Merge population data
-population_data <- population_data %>%
-  left_join(population_data_adult, by = "LGA")
-
-# Merge population data with bocsar_poi_spatial
-bocsar_poi_spatial <- bocsar_poi_spatial %>%
-  left_join(population_data, by = c("LGA_NAME23_standardized" = "LGA"))
-
-
-# Read in  ROGS data for costs...
-
-# Load required libraries
-library(readxl)
-library(dplyr)
-library(tidyr)
-library(stringr)
-
-# Load data
+# Load ROGS data for costs
 rogs_filepath <- "/Users/Current/Desktop/Good_Data_Institute/JustReinvest/code/GDI_BOCSAR_Dashboard/data/ROGS_combined/ROGS.xlsx"
 Data8A <- read_excel(rogs_filepath, sheet = "8A")
 Data17A <- read_excel(rogs_filepath, sheet = "17A")
@@ -361,6 +336,37 @@ bocsar_poi_spatial <- bocsar_poi_spatial %>%
 
 # Save the updated data
 save(bocsar_poi_spatial, file = "bocsar_poi_spatial_with_pop_and_costs.RData")
+
+# Print summary of the final dataset
+print(summary(bocsar_poi_spatial))
+print(names(bocsar_poi_spatial))
+
+# Print the first few rows of the final dataset
+print(head(bocsar_poi_spatial))
+
+# Print the structure of the final dataset
+str(bocsar_poi_spatial)
+
+# Print the size of the final dataset
+print(object.size(bocsar_poi_spatial), units = "Mb")
+
+# Check for any missing values in key columns
+print(colSums(is.na(bocsar_poi_spatial)))
+
+# Print unique values in BOCSAR_variable column to verify all expected variables are present
+print(unique(bocsar_poi_spatial$BOCSAR_variable))
+
+# Verify that rates have been calculated correctly
+print(summary(bocsar_poi_spatial$Aboriginal_Rate_per_1000))
+print(summary(bocsar_poi_spatial$Non_Aboriginal_Rate_per_1000))
+
+# Check if any LGAs are missing population data
+missing_pop <- bocsar_poi_spatial %>%
+  filter(is.na(Population_Indigenous_over18) | is.na(Population_Indigenous_10_17) |
+         is.na(Population_Non_Indigenous_over18) | is.na(Population_Non_Indigenous_10_17))
+print(unique(missing_pop$LGA_NAME23_standardized))
+
+# Print any warnings or messages that occurred during the data processing
+warnings()
+
 ```
-
-

@@ -1,0 +1,43 @@
+/* custom.css */
+.skin-blue .main-header .logo {
+  background-color: #1e87c5;
+}
+.skin-blue .main-header .navbar {
+  background-color: #1e87c5;
+}
+.skin-blue .main-sidebar {
+  background-color: #2c3e50;
+}
+.skin-blue .sidebar a {
+  color: #ffffff;
+}
+.skin-blue .sidebar-menu > li.active > a,
+.skin-blue .sidebar-menu > li:hover > a {
+  background-color: #1e87c5;
+}
+.box.box-solid.box-primary > .box-header {
+  background-color: #1e87c5;
+}
+.box.box-solid.box-info > .box-header {
+  background-color: #73b9c5;
+}
+.box.box-solid.box-success > .box-header {
+  background-color: #b8df91;
+}
+.box.box-solid.box-warning > .box-header {
+  background-color: #fdbe26;
+}
+.box.box-solid.box-danger > .box-header {
+  background-color: #41B50D;
+}
+.btn-primary {
+  background-color: #1e87c5;
+  border-color: #1e87c5;
+}
+.btn-primary:hover, .btn-primary:focus {
+  background-color: #73b9c5;
+  border-color: #73b9c5;
+}
+.content-wrapper, .right-side {
+  background-color: #f8f9fa;
+}
