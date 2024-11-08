@@ -5,5 +5,5 @@ account: ofor22
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 12236631
-bundleId: 9167840
+bundleId:
 url: https://ofor22.shinyapps.io/demo_bocsar_lga_shiny/
